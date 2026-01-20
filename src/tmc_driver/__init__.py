@@ -29,6 +29,7 @@ Example:
 # Driver classes
 from .tmc_2208 import Tmc2208
 from .tmc_2209 import Tmc2209
+from .tmc_2300 import Tmc2300
 from .tmc_2240 import Tmc2240
 from .tmc_5160 import Tmc5160
 
@@ -64,6 +65,7 @@ __all__ = [
     # Driver classes
     "Tmc2208",
     "Tmc2209",
+    "Tmc2300",
     "Tmc2240",
     "Tmc5160",
     # Exceptions

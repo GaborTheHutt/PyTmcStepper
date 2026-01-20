@@ -92,6 +92,7 @@ Driver  | Interface
 --      | --
 TMC2208 | UART
 TMC2209 | UART
+TMC2300 | UART
 TMC2240 | SPI/UART
 TMC5160 | SPI/UART
 
