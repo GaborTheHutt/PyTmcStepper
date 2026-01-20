@@ -26,8 +26,24 @@ class TmcComUartBase(TmcCom):
 
         self.ser = None  # To be set by subclass
 
-        self.r_frame = [0x55, 0, 0, 0]
-        self.w_frame = [0x55, 0, 0, 0, 0, 0, 0, 0]
+        # TMC UART frames: sync byte 0x05, then address byte, then register.
+        # Read frame:  [0x05, addr, reg, crc]
+        # Write frame: [0x05, addr, reg|0x80, d3, d2, d1, d0, crc]
+        self.r_frame = [0, 0, 0, 0]
+        self.w_frame = [0, 0, 0, 0, 0, 0, 0, 0]
+
+    def _log_frame(self, label: str, data):
+        """Log raw frame as hex and binary for oscilloscope comparison."""
+        if not hasattr(self, "_tmc_logger") or self._tmc_logger is None:
+            return
+        try:
+            buf = bytes(data)
+            hex_str = " ".join(f"{b:02X}" for b in buf)
+            bin_str = " ".join(f"{b:08b}" for b in buf)
+            self._tmc_logger.log(f"{label} HEX: {hex_str}", Loglevel.DEBUG)
+            self._tmc_logger.log(f"{label} BIN: {bin_str}", Loglevel.DEBUG)
+        except Exception:
+            pass
 
     @abstractmethod
     def init(self):
@@ -84,10 +100,12 @@ class TmcComUartBase(TmcCom):
 
         self._uart_flush()
 
-        self.r_frame[1] = self.driver_address
-        self.r_frame[2] = addr
+        self.r_frame[0] = 0x05
+        self.r_frame[1] = self.driver_address & 0xFF
+        self.r_frame[2] = addr & 0xFF
         self.r_frame[3] = compute_crc8_atm(self.r_frame[:-1])
 
+        self._log_frame("UART TX READ", self.r_frame)
         rtn = self._uart_write(self.r_frame)
         if rtn != len(self.r_frame):
             raise TmcComException("Error in UART write")
@@ -95,7 +113,17 @@ class TmcComUartBase(TmcCom):
         # adjust per baud and hardware. Sequential reads without some delay fail.
         time.sleep(self.communication_pause)
 
-        rtn = self._uart_read(12)
+        # Read full 12-byte window, drop first 4 bytes (echo), keep next 8 as reply
+        raw = self._uart_read(12)
+        if raw:
+            self._log_frame("UART RX RAW", raw)
+        # Ensure at least 4 bytes for echo + 8 bytes reply
+        echo = raw[:4] if len(raw) >= 4 else raw
+        reply = raw[4:12] if len(raw) >= 12 else raw[4:]
+        if echo:
+            self._log_frame("UART RX ECHO", echo)
+        rtn = reply
+        self._log_frame("UART RX READ", rtn)
 
         time.sleep(self.communication_pause)
 
@@ -126,17 +154,17 @@ class TmcComUartBase(TmcCom):
             rtn, flags = self.read_reg(addr)
             if rtn is None:
                 return -1, None
-            rtn_data = rtn[7:11]
+            rtn_data = rtn[3:7]
             not_zero_count = len([elem for elem in rtn if elem != 0])
 
-            if len(rtn) < 12 or not_zero_count == 0:
+            if len(rtn) < 8 or not_zero_count == 0:
                 self._tmc_logger.log(
                     f"""UART Communication Error:
                                     {len(rtn_data)} data bytes |
                                     {len(rtn)} total bytes""",
                     Loglevel.ERROR,
                 )
-            elif rtn[11] != compute_crc8_atm(rtn[4:11]):
+            elif rtn[-1] != compute_crc8_atm(rtn[:-1]):
                 self._tmc_logger.log(
                     "UART Communication Error: CRC MISMATCH", Loglevel.ERROR
                 )
@@ -174,8 +202,9 @@ class TmcComUartBase(TmcCom):
 
         self._uart_flush()
 
-        self.w_frame[1] = self.driver_address
-        self.w_frame[2] = addr | 0x80  # set write bit
+        self.w_frame[0] = 0x05
+        self.w_frame[1] = self.driver_address & 0xFF
+        self.w_frame[2] = (addr | 0x80) & 0xFF  # set write bit
 
         self.w_frame[3] = 0xFF & (val >> 24)
         self.w_frame[4] = 0xFF & (val >> 16)
@@ -184,12 +213,27 @@ class TmcComUartBase(TmcCom):
 
         self.w_frame[7] = compute_crc8_atm(self.w_frame[:-1])
 
+        self._log_frame("UART TX WRITE", self.w_frame)
         rtn = self._uart_write(self.w_frame)
         if rtn != len(self.w_frame):
             self._tmc_logger.log("Err in write", Loglevel.ERROR)
             return False
 
         time.sleep(self.communication_pause)
+
+        # Clear any echoed bytes from the write so the next read starts clean
+        try:
+            self._uart_flush()
+        except Exception:
+            pass
+
+        # Best effort: drain a possible local echo of this write
+        try:
+            echo = self._uart_read(len(self.w_frame))
+            if echo:
+                self._log_frame("UART RX ECHO WRITE", echo)
+        except Exception:
+            pass
 
         return True
 
@@ -258,7 +302,8 @@ class TmcComUartBase(TmcCom):
             ioin = tmc_shared_reg.Ioin(self)
             setattr(ioin, "ADDR", 0x6)  # Default IOIN address
 
-        self.r_frame[1] = self.driver_address
+        self.r_frame[0] = 0x05
+        self.r_frame[1] = self.driver_address & 0xFF
         self.r_frame[2] = ioin.ADDR
         self.r_frame[3] = compute_crc8_atm(self.r_frame[:-1])
 
@@ -269,7 +314,7 @@ class TmcComUartBase(TmcCom):
 
         snd = bytes(self.r_frame)
 
-        rtn = self._uart_read(12)
+        rtn = self._uart_read(8)
         self._tmc_logger.log(
             f"received {len(rtn)} bytes; {len(rtn)*8} bits", Loglevel.DEBUG
         )

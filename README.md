@@ -1,5 +1,12 @@
 # PyTmcStepper
 
+## Local uncommitted changes (2026-01-20)
+- UART framing fixes: use 0x05 sync, mask address/reg bytes, and log TX/RX frames to debug CRC/echo issues for shared PDN_UART lines.
+- Read path hardens echo handling: read 12 bytes, drop 4-byte echo, keep 8-byte reply; stricter CRC check on full reply and clearer error logging when replies are empty or short.
+- Write path hygiene: flush and drain echoed write bytes before next read to prevent stale data from corrupting responses.
+- UART timing guardrail: `communication_pause` now enforces a minimum 6 ms (float) to avoid zero-delay at higher baud rates and reduce empty reads when logging is quieter.
+- TMC2300 registers: import layout aligned with TMC2209 helpers (TCoolThrs, SgThrs, SgResult) without functional change.
+
 [![PyPI python version PyTmcStepper](https://badgen.net/pypi/python/PyTmcStepper)](https://pypi.org/project/PyTmcStepper)
 [![PyPI version PyTmcStepper](https://badgen.net/pypi/v/PyTmcStepper)](https://pypi.org/project/PyTmcStepper)
 [![PyPI downloads PyTmcStepper](https://img.shields.io/pypi/dm/PyTmcStepper)](https://pypi.org/project/PyTmcStepper)

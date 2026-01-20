@@ -61,8 +61,9 @@ class TmcComUart(TmcComUartBase):
         if self.ser.baudrate is None:
             raise TmcComException("Baudrate is not set")
 
-        # adjust per baud and hardware. Sequential reads without some delay fail.
-        self.communication_pause = 500 // self.ser.baudrate
+        # Adjust per baud and hardware. Use a small minimum pause to avoid zero delay
+        # at higher baud rates (integer division would otherwise yield 0).
+        self.communication_pause = max(0.006, 500 / self.ser.baudrate)
 
         if self.ser is None:
             return

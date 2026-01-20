@@ -19,10 +19,8 @@ from ._tmc220x_reg import (
     MsCnt,
     ChopConf,
     PwmConf,
-    TCoolThrs,
-    SgThrs,
-    SgResult,
 )
+from ._tmc2209_reg import TCoolThrs, SgThrs, SgResult
 
 
 class GConf(shared.GConf):
