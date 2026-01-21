@@ -5,6 +5,7 @@
 """Tmc2300 stepper driver module"""
 
 from .tmc_220x import Tmc220x
+from ._tmc_stallguard import StallGuard
 from ._tmc_xxxx import TmcXXXX
 from .tmc_logger import Loglevel
 from ._tmc_exceptions import TmcDriverException
@@ -18,8 +19,8 @@ from .motion_control._tmc_mc_step_pwm_dir import TmcMotionControlStepPwmDir
 from .motion_control._tmc_mc_vactual import TmcMotionControlVActual
 
 
-class Tmc2300(Tmc220x):
-    """Tmc2300 driver (UART)"""
+class Tmc2300(Tmc220x, StallGuard):
+    """Tmc2300 driver (UART) with StallGuard helpers"""
 
     DRIVER_FAMILY = "TMC2300"
     SUPPORTED_COM_TYPES = (TmcComUartBase,)
@@ -61,6 +62,8 @@ class Tmc2300(Tmc220x):
             log_formatter,
         )
 
+        StallGuard.__init__(self)
+
         if self.tmc_com is not None:
             # Chip-specific registers
             self.gconf: GConf = GConf(self.tmc_com)
@@ -86,11 +89,22 @@ class Tmc2300(Tmc220x):
 
     # Feature differences -------------------------------------------------
     def get_spreadcycle(self) -> bool:  # type: ignore[override]
-        """TMC2300 does not expose en_spreadcycle; always stealthChop-style."""
+        """TMC2300 stays in stealthChop; spreadCycle not available."""
         return False
 
     def set_spreadcycle(self, en: bool):  # type: ignore[override]
-        raise TmcDriverException("TMC2300 does not support spreadCycle selection via UART")
+        """No-op for compatibility; TMC2300 has no spreadCycle mode."""
+        if en:
+            self.tmc_logger.log(
+                "TMC2300 has no spreadCycle; staying in stealthChop.",
+                Loglevel.INFO,
+            )
+        return
+
+    def deinit(self):  # type: ignore[override]
+        """destructor with StallGuard cleanup"""
+        super().deinit()
+        StallGuard.deinit(self)
 
     def set_microstepping_resolution(self, mres: int):  # type: ignore[override]
         """TMC2300 lacks mstep_reg_select; set resolution and return."""
